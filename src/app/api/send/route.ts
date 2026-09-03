@@ -1,0 +1,7 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { isAuthorized } from "@/lib/auth";
+import { getSupabase } from "@/lib/supabase";
+export const runtime="nodejs";
+const schema=z.object({lead:z.object({name:z.string().min(1),email:z.string().email(),company:z.string().min(1)}),draft:z.object({status:z.literal("queued"),subject:z.string().min(1).max(200),body:z.string().min(1).max(10000),template:z.enum(["website","automotive"]),verifiedDetail:z.string().min(1)})});
+export async function POST(request:NextRequest){try{if(!isAuthorized(request))return NextResponse.json({error:"Unauthorized"},{status:401});const {lead,draft}=schema.parse(await request.json());const db=getSupabase();const {data:duplicate}=await db.from("email_queue").select("id").eq("recipient_email",lead.email).in("status",["pending","sending","sent"]).maybeSingle();if(duplicate)return NextResponse.json({error:"This lead is already queued or sent."},{status:409});const {error}=await db.from("email_queue").insert({recipient_name:lead.name,recipient_email:lead.email,company:lead.company,subject:draft.subject,email_body:draft.body,template_name:draft.template,verified_detail:draft.verifiedDetail,status:"pending"});if(error)throw error;return NextResponse.json({success:true,status:"queued"});}catch(error){console.error("Queue error",error);return NextResponse.json({error:error instanceof z.ZodError?"Invalid send request.":"Unable to queue email."},{status:500});}}
